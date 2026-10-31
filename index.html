@@ -1,0 +1,128 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:linear-gradient(160deg,#0b0620,#1d0b4a 60%,#3a0f5e);color:#fff;font-family:sans-serif;min-height:100vh;overflow-x:hidden}
+canvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+#app{position:relative;z-index:1;padding:18px;max-width:480px;margin:auto}
+.card{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(8px);border-radius:22px;padding:18px;margin-bottom:14px}
+h1{margin:6px 0 2px;font-size:26px;text-align:center;background:linear-gradient(90deg,#ffd43b,#ff8a00);-webkit-background-clip:text;color:transparent}
+.big{font-size:56px;font-weight:900;text-align:center;color:#ffd43b;text-shadow:0 0 24px #ff9d00}
+.c{text-align:center}.s{opacity:.75;font-size:14px}
+input{width:100%;padding:14px;margin:6px 0 10px;border-radius:14px;border:2px solid #6c3bd1;background:#150a35;color:#fff;font-size:18px}
+button{width:100%;padding:15px;border:0;border-radius:16px;font-size:18px;font-weight:800;color:#2b1700;background:linear-gradient(180deg,#ffe066,#ff9d00);box-shadow:0 5px 0 #a35a00;margin-top:6px}
+button:active{transform:translateY(4px);box-shadow:0 1px 0 #a35a00}
+button.g{background:#3b2a78;color:#fff;box-shadow:0 5px 0 #20144a}
+.bar{height:16px;border-radius:9px;background:#150a35;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#51cf66,#ffd43b);transition:width 1s}
+.msg{font-size:17px;line-height:1.4;text-align:center}
+</style></head><body><canvas id="cv"></canvas><div id="app"></div>
+<script>
+const $=s=>document.querySelector(s),D=864e5;
+let S=JSON.parse(localStorage.getItem('bs')||'null'),warned=false;
+const save=()=>localStorage.setItem('bs',JSON.stringify(S));
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const parse=s=>{const[a,b,c]=s.split('-');return new Date(+a,b-1,+c)};
+const addd=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const mon=d=>addd(new Date(d.getFullYear(),d.getMonth(),d.getDate()),-((d.getDay()+6)%7));
+const days=(a,b)=>Math.round((b-a)/D);
+const rnd=(a,b)=>a+Math.random()*(b-a),pick=a=>a[Math.floor(Math.random()*a.length)];
+const f=n=>Math.round(n).toLocaleString('ru');
+const fd=d=>parse(d).toLocaleDateString('ru',{day:'numeric',month:'long'});
+// ---------- логика цели недели ----------
+function weeksLeft(start){return Math.round((days(parse(start),parse(S.deadline))+1)/7)}
+function gen(startT,start){
+  const R=S.goal-startT;if(R<=0)return 0;
+  const W=weeksLeft(start);if(W<=1)return R;
+  const prog=Math.max(0,Math.min(1,(startT-S.t0)/(S.goal-S.t0)));
+  const fr=1.35-0.7*prog;            // в начале цели больше, в конце меньше
+  const rp=S.resp/100;
+  if(Math.random()<Math.max(0,0.08+0.12*rp))return 0;   // нулевая неделя
+  const m=rnd(0.7-0.4*rp,1.3-0.3*rp);                   // уважение снижает цели
+  return Math.min(R,Math.max(0,Math.round(R/W*fr*m/100)*100));
+}
+function newWeek(start,startT){S.week={start,startT,target:gen(startT,start),log:[]};}
+// ---------- экраны ----------
+function setup(){
+  const m=mon(new Date());
+  $('#app').innerHTML=`<h1>🏆 Кубковый Босс</h1><div class="card"><div class="msg">Привет! Давай договоримся. Скажи точные цифры, и я начну тебя гонять 😈</div></div>
+  <div class="card">Сколько у тебя кубков сейчас?<input id="a" type="number" inputmode="numeric">
+  Какая цель по кубкам?<input id="b" type="number" inputmode="numeric">
+  До какого воскресенья?<input id="c" type="date">
+  С какого понедельника считаем (можно задним числом)<input id="d" type="date" value="${iso(m)}">
+  <div id="w" class="msg" style="color:#ffa8a8"></div><button onclick="start()">Поехали!</button></div>`;
+}
+function start(){
+  const cur=+$('#a').value,goal=+$('#b').value;
+  if(!cur||goal<=cur||!$('#c').value)return $('#w').textContent='Заполни всё, цель должна быть больше текущих кубков.';
+  let dl=parse($('#c').value);dl=addd(dl,(7-dl.getDay())%7);  // на воскресенье
+  const st=mon(parse($('#d').value||iso(new Date())));
+  if(dl<addd(st,6))return $('#w').textContent='Дата слишком близко — нужна хотя бы одна неделя.';
+  const W=Math.round((days(st,dl)+1)/7),avg=(goal-cur)/W;
+  if(avg>3000&&!warned){warned=true;return $('#w').textContent=`Советую выбрать дату подальше, ибо набор будет слишком тяжёлым: в среднем ${f(avg)} кубков в неделю. Нажми ещё раз, если не боишься.`}
+  S={t0:cur,cur,goal,deadline:iso(dl),resp:0,hist:[]};
+  newWeek(iso(st),cur);save();render();
+}
+function say(){
+  const g=S.cur-S.week.startT,t=S.week.target,left=Math.max(0,t-g);
+  const dow=(new Date().getDay()+6)%7;
+  if(t===0)return pick(['На этой неделе цель — 0. Но я-то знаю, ты хочешь больше 😏','Ноль! Отдыхай… или докажи, что ты машина.']);
+  if(left===0)return pick(['Красавчик! Недельная цель закрыта 🔥','Неделя в кармане. Каждый лишний кубок — к моему уважению.']);
+  if(dow>=5)return pick(['Воскресенье близко! Поиграй, иначе не успеешь!','Времени почти нет. Хватай бойца и в бой!']);
+  if(S.resp<-30)return 'Ты меня разочаровал. Цели растут. Поиграй уже!';
+  if(S.resp>40)return 'Ты стал легендой. Для тебя цели станут мягче 😎';
+  return pick(['Кубки сами не накапают. Вперёд!','Поиграй чуть-чуть, потом отчитаешься.','Ты можешь лучше, я в тебя верю.']);
+}
+function render(){
+  if(!S)return setup();
+  const today=new Date(),w=S.week,end=addd(parse(w.start),6),over=today>addd(end,0)&&iso(today)>iso(end);
+  const prog=Math.min(100,(S.cur-S.t0)/(S.goal-S.t0)*100),g=S.cur-w.startT,t=w.target;
+  const dl=Math.max(1,days(new Date(today.getFullYear(),today.getMonth(),today.getDate()),end)+1);
+  const perDay=Math.ceil(Math.max(0,t-g)/dl);
+  const mood=S.resp>50?'😎 Уважаю':S.resp>10?'🙂 Доволен':S.resp>-20?'😐 Присматриваюсь':'😠 Злюсь';
+  $('#app').innerHTML=`<h1>🏆 Кубковый Босс</h1>
+  <div class="card c"><div class="s">Цель недели (${fd(w.start)} – ${fd(iso(end))})</div><div class="big">${f(t)}</div>
+  <div class="s">набрано за неделю: <b>${f(g)}</b> · осталось: <b>${f(Math.max(0,t-g))}</b></div>
+  <div class="bar"><i style="width:${t?Math.min(100,g/t*100):100}%"></i></div>
+  <div class="msg">${over?'Неделя закончилась! Введи итог и закрой её.':'Сегодня в среднем нужно: <b>'+f(perDay)+'</b> кубков (дней осталось: '+dl+')'}</div></div>
+  <div class="card msg">${say()}<div class="s" style="margin-top:8px">Настроение босса: ${mood}</div></div>
+  <div class="card"><div class="s">Общий путь: ${f(S.t0)} → ${f(S.goal)} до ${fd(S.deadline)}</div><div class="bar"><i style="width:${prog}%"></i></div>
+  <div class="c"><b style="font-size:28px">${f(S.cur)}</b> 🏆 сейчас</div>
+  <input id="n" type="number" inputmode="numeric" placeholder="Сколько кубков сейчас?">
+  <button onclick="addT()">Набрал!</button>
+  <button class="g" onclick="closeW()">Закрыть неделю (итог)</button>
+  <button class="g" onclick="if(confirm('Сбросить всё?')){localStorage.clear();S=null;warned=false;render()}">Сброс</button></div>`;
+}
+function addT(){
+  const v=+$('#n').value;if(!v)return;
+  const gain=v-S.cur;S.cur=v;S.week.log.push([iso(new Date()),v]);save();
+  if(gain>0)rain(gain);
+  setTimeout(render,gain>0?1800:0);
+}
+function closeW(){
+  const w=S.week,gain=S.cur-w.startT,t=w.target;let d;
+  if(t===0)d=gain>0?10+Math.min(25,gain/100):0;
+  else{const r=gain/t;d=r<1?-((1-r)*30+5):Math.min(30,(r-1)*40+5)}
+  S.resp=Math.max(-100,Math.min(100,Math.round(S.resp+d)));
+  S.hist.push({start:w.start,target:t,gain});
+  if(S.cur>=S.goal){save();$('#app').innerHTML=`<h1>🏆 ЦЕЛЬ ДОСТИГНУТА!</h1><div class="card msg">${f(S.cur)} кубков! Ты чемпион. Босс снимает шляпу 🎩</div><button onclick="localStorage.clear();S=null;render()">Новая цель</button>`;rain(3000);return}
+  if(iso(new Date())>iso(parse(S.deadline))){S.deadline=iso(addd(parse(S.deadline),7))}
+  newWeek(iso(addd(parse(w.start),7)),S.cur);save();
+  alert(d>=0?'Красавчик! Уважение растёт 💪 Новая цель: '+f(S.week.target):'Ты меня разозлил 😠 Новая цель: '+f(S.week.target));
+  render();
+}
+// ---------- фон + анимация ----------
+const cv=$('#cv'),cx=cv.getContext('2d');let P=[],R=[];
+function rs(){cv.width=innerWidth;cv.height=innerHeight}rs();onresize=rs;
+for(let i=0;i<40;i++)P.push({x:rnd(0,1e3),y:rnd(0,1e3),s:rnd(14,42),v:rnd(.2,.8),a:rnd(0,6),r:rnd(-.02,.02),e:pick(['🏆','⭐','💎','✨'])});
+function rain(n){for(let i=0;i<Math.min(80,n/15+10);i++)R.push({x:rnd(0,cv.width),y:-rnd(0,300),v:rnd(4,9),s:rnd(14,24)})}
+(function loop(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  P.forEach(p=>{p.y-=p.v;p.a+=p.r;if(p.y<-60){p.y=cv.height+60;p.x=rnd(0,cv.width)}
+    cx.save();cx.globalAlpha=.35;cx.translate(p.x%cv.width,p.y);cx.rotate(p.a);cx.font=p.s+'px serif';cx.fillText(p.e,0,0);cx.restore()});
+  R=R.filter(p=>p.y<cv.height*.45);
+  R.forEach(p=>{p.y+=p.v;p.v+=.15;cx.font=p.s+'px serif';cx.fillText('🏆',p.x,p.y)});
+  requestAnimationFrame(loop)})();
+render();
+</script></body></html>
